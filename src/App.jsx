@@ -323,7 +323,7 @@ export default function App() {
         <div style={s.liveIndicator}>
           <span style={s.liveLabel}>Live data sources:</span>
           <span style={{...s.sourceChip, background:"rgba(60,180,100,0.15)", color:"#6ee7a0", border:"1px solid rgba(60,180,100,0.3)"}}>🟢 Google Civic API</span>
-          <span style={{...s.sourceChip, background:"rgba(99,140,220,0.15)", color:"#93b8f0", border:"1px solid rgba(99,140,220,0.3)"}}>🔵 Democracy Works</span>
+          <span style={{...s.sourceChip, background:"rgba(99,140,220,0.15)", color:"#93b8f0", border:"1px solid rgba(99,140,220,0.3)"}}>🔵 OpenStates API</span>
           <span style={s.liveNote}>Results are verified against official government sources in real time.</span>
         </div>
 
