@@ -842,7 +842,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1200,
         system: buildSystemPrompt(liveContext, hasLiveData),
         messages: [{ role: 'user', content: `[Georgia elections] ${clean}` }],
@@ -866,6 +866,13 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('Claude error:', err.message);
-    return res.status(500).json({ error: 'Search failed. Please try again or visit ballotpedia.org.' });
+    return res.status(500).json({
+      error: `Search failed: ${err.message}`,
+      debug: {
+        hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
+        hasGoogleKey: !!process.env.GOOGLE_CIVIC_API_KEY,
+        hasOpenStatesKey: !!process.env.OPENSTATES_API_KEY,
+      }
+    });
   }
 }
