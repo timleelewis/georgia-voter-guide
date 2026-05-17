@@ -414,7 +414,7 @@ export default function App() {
 
         <footer style={s.footer}>
           <p>Nonpartisan · AI-assisted · Does not endorse any candidate or party</p>
-          <p style={{marginTop:4,color:"#2d4060"}}>Protecting your right to an informed vote 🇺🇸</p>
+          <p style={{marginTop:4,color:"#2d4060"}}>Protecting your right to an informed vote</p>
         </footer>
       </div>
       <style>{css}</style>
