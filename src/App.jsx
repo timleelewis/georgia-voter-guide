@@ -227,7 +227,7 @@ export default function App() {
         {/* Header */}
         <header style={s.header}>
           <div style={s.stripe}/>
-          <div style={s.titleRow}>
+          <div style={s.titleRow} className="title-row">
             <span style={s.seal}>⚖️</span>
             <div style={{flex:1}}>
               <h1 style={s.title}>Georgia Voter Guide</h1>
@@ -236,14 +236,14 @@ export default function App() {
             <button style={s.logoutBtn} onClick={handleLogout}>Log Out</button>
           </div>
           <p style={s.mission}>Party labels may be hidden from your ballot — this tool isn't.</p>
-          <button style={s.districtBtn} onClick={() => setShowDistrictCheck(true)}>
+          <button style={s.districtBtn} className="district-btn" onClick={() => setShowDistrictCheck(true)}>
             🗺️ Did My District Change?
           </button>
         </header>
 
         {/* Usage Dashboard */}
         {access && (
-          <div style={s.dashboard}>
+          <div style={s.dashboard} className="dashboard">
             <div style={s.dashItem}>
               <span style={s.dashLabel}>Status</span>
               <span style={{...s.dashValue, color: access.allowed?"#6ee7a0":"#f87171"}}>
@@ -266,7 +266,7 @@ export default function App() {
               </span>
             </div>
             {/* Progress bar */}
-            <div style={s.progressWrap}>
+            <div style={s.progressWrap} className="dashboard-progress">
               <div style={{
                 ...s.progressBar,
                 width: `${Math.min(100, ((access.searches_today||0) / (access.search_limit||50)) * 100)}%`,
@@ -291,7 +291,7 @@ export default function App() {
         )}
 
         {/* Search Mode Tabs */}
-        <div style={s.modeTabs}>
+        <div style={s.modeTabs} className="mode-tabs">
           {[
             { id: "candidate", label: "🔍 Candidate Lookup" },
             { id: "address",   label: "📍 My Representatives" },
@@ -299,6 +299,7 @@ export default function App() {
           ].map(m => (
             <button key={m.id}
               style={{...s.modeTab, ...(searchMode===m.id ? s.modeTabActive : {})}}
+              className="mode-tab"
               onClick={() => { setSearchMode(m.id); setQuery(""); setResult(null); setError(null); }}>
               {m.label}
             </button>
@@ -306,7 +307,7 @@ export default function App() {
         </div>
 
         {/* Search */}
-        <div style={s.searchRow}>
+        <div style={s.searchRow} className="search-row">
           <span>{ searchMode==="address" ? "📍" : searchMode==="election" ? "🗓️" : "🔍" }</span>
           <input style={s.input}
             placeholder={
@@ -317,19 +318,20 @@ export default function App() {
             value={query} maxLength={300}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key==="Enter" && search()} />
-          <span style={s.charCount}>{query.length}/300</span>
+          <span style={s.charCount} className="char-count">{query.length}/300</span>
           <button style={{...s.searchBtn,...(loading||!access?.allowed?s.btnDisabled:{})}}
+            className="search-btn"
             onClick={() => search()} disabled={loading || !access?.allowed}>
             {loading ? "…" : "Search"}
           </button>
         </div>
 
         {/* Live data indicator */}
-        <div style={s.liveIndicator}>
+        <div style={s.liveIndicator} className="live-indicator">
           <span style={s.liveLabel}>Live data sources:</span>
           <span style={{...s.sourceChip, background:"rgba(60,180,100,0.15)", color:"#6ee7a0", border:"1px solid rgba(60,180,100,0.3)"}}>🟢 Google Civic API</span>
           <span style={{...s.sourceChip, background:"rgba(99,140,220,0.15)", color:"#93b8f0", border:"1px solid rgba(99,140,220,0.3)"}}>🔵 OpenStates API</span>
-          <span style={s.liveNote}>Results are verified against official government sources in real time.</span>
+          <span style={s.liveNote} className="live-note">Results are verified against official government sources in real time.</span>
         </div>
 
         {/* Quick searches */}
@@ -372,7 +374,7 @@ export default function App() {
         {/* Result */}
         {result && !loading && (
           <div style={s.resultCard}>
-            <div style={s.resultHead}>
+            <div style={s.resultHead} className="result-head">
               <span>📋</span>
               <span style={{flex:1,fontWeight:600}}>
                 { searchMode==="address" ? "Your Representatives" :
@@ -438,6 +440,66 @@ const css = `
   @keyframes fadeUp { from { opacity:0;transform:translateY(10px); } to { opacity:1;transform:translateY(0); } }
   input::placeholder { color: #3d5470; }
   input { color: #e0e8f4 !important; }
+
+  @media (max-width: 600px) {
+    /* Header */
+    .title-row { flex-wrap: wrap; gap: 8px !important; }
+    .app-title { font-size: 24px !important; }
+
+    /* Dashboard — stack into 2-column grid */
+    .dashboard {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px !important;
+    }
+    .dashboard-progress {
+      grid-column: 1 / -1;
+    }
+
+    /* Mode tabs — full width stacked pills */
+    .mode-tabs {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px !important;
+    }
+    .mode-tab {
+      padding: 8px 6px !important;
+      font-size: 11px !important;
+      text-align: center;
+    }
+
+    /* Search row — stack input above button */
+    .search-row {
+      flex-wrap: wrap;
+      gap: 8px !important;
+      padding: 8px !important;
+    }
+    .search-row input { min-width: 0; width: 100%; }
+    .search-row .search-btn {
+      width: 100%;
+      text-align: center;
+      border-radius: 8px !important;
+      padding: 10px !important;
+    }
+    .char-count { display: none; }
+
+    /* Live indicator — wrap chips onto new lines */
+    .live-indicator {
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      gap: 6px !important;
+    }
+    .live-note { margin-left: 0 !important; }
+
+    /* Source bar chips */
+    .source-bar { flex-wrap: wrap; }
+
+    /* Result head badges */
+    .result-head { flex-wrap: wrap; gap: 6px !important; }
+
+    /* District button */
+    .district-btn { width: 100%; margin-top: 10px; text-align: center; }
+  }
 `;
 
 const s = {

@@ -5,6 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Georgia Voter Guide</title>
     <meta name="description" content="Nonpartisan Georgia voter guide — find candidate party affiliations, policy positions, and district information." />
+
+    <!-- PWA / mobile shell -->
+    <meta name="theme-color" content="#080f1e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="GA Voter Guide" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Prevent phone number auto-detection from mangling district numbers -->
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Open Graph — controls preview card when shared via text/social -->
+    <meta property="og:title" content="Georgia Voter Guide" />
+    <meta property="og:description" content="Know who's on your ballot. Party labels may be removed — your right to know isn't." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://georgia-voter-guide-ruby.vercel.app" />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Georgia Voter Guide" />
+    <meta name="twitter:description" content="Free nonpartisan tool — find your candidates, districts, and polling place." />
   </head>
   <body style="margin:0;background:#080f1e;">
     <div id="root"></div>
