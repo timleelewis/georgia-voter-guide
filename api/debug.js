@@ -146,7 +146,7 @@ export default async function handler(req, res) {
 
   // Test 1 — OpenStates API
   try {
-    const url = `https://v3.openstates.org/people?jurisdiction=ocd-jurisdiction%2Fcountry%3Aus%2Fstate%3Aga%2Fgovernment&org_classification=legislature&per_page=2`;
+    const url = `https://v3.openstates.org/people?jurisdiction=ocd-jurisdiction%2Fcountry%3Aus%2Fstate%3Aga%2Fgovernment&per_page=2`;
     const osRes = await fetch(url, {
       headers: {
         'X-API-KEY': process.env.OPENSTATES_API_KEY || '',
@@ -173,7 +173,11 @@ export default async function handler(req, res) {
     const gcRes = await fetch(url);
     const gcData = await gcRes.json();
     const gaElections = (gcData.elections || []).filter(e =>
-      e.ocdDivisionId?.includes('state:ga') || e.name?.toLowerCase().includes('georgia')
+      e.ocdDivisionId?.includes('state:ga') ||
+      e.ocdDivisionId?.includes('state/ga') ||
+      e.name?.toLowerCase().includes('georgia') ||
+      e.name?.toLowerCase().includes(' ga ') ||
+      e.name?.toLowerCase().endsWith(' ga')
     );
     results.apiTests.googleCivicElections = {
       status: gcRes.status,
@@ -181,6 +185,7 @@ export default async function handler(req, res) {
       totalElections: gcData.elections?.length || 0,
       georgiaElections: gaElections.length,
       georgiaSample: gaElections[0] || null,
+      allElectionNames: (gcData.elections || []).map(e => ({ id: e.id, name: e.name, ocd: e.ocdDivisionId })),
       error: gcData.error?.message || null,
     };
   } catch (err) {

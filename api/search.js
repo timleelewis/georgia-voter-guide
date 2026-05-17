@@ -485,7 +485,6 @@ async function fetchOpenStatesLegislators(name = null) {
     const params = new URLSearchParams({
       jurisdiction: 'ocd-jurisdiction/country:us/state:ga/government',
       per_page: 10,
-      org_classification: 'legislature',
     });
     if (name) params.append('name', name);
 
@@ -528,16 +527,21 @@ async function fetchActiveGeorgiaElectionId() {
     if (!res.ok) return null;
     const data = await res.json();
 
-    // Find Georgia elections
-    const gaElections = (data.elections || []).filter(e =>
+    // Find Georgia elections — broad match
+    const allElections = data.elections || [];
+    const gaElections = allElections.filter(e =>
       e.ocdDivisionId?.includes('state:ga') ||
-      e.name?.toLowerCase().includes('georgia')
+      e.ocdDivisionId?.includes('state/ga') ||
+      e.name?.toLowerCase().includes('georgia') ||
+      e.name?.toLowerCase().includes(' ga ') ||
+      e.name?.toLowerCase().endsWith(' ga')
     );
 
-    // Return most recent/upcoming Georgia election ID
-    // Use any available election as fallback for voter info
-    const allElections = data.elections || [];
-    return gaElections.length ? gaElections[gaElections.length - 1].id : (allElections.length ? allElections[allElections.length - 1].id : '2000'); // 2000 = test election fallback
+    // Use Georgia election if found, otherwise fall back to most recent available
+    // (voter info query will still scope to the address's state)
+    if (gaElections.length) return gaElections[gaElections.length - 1].id;
+    if (allElections.length) return allElections[allElections.length - 1].id;
+    return '2000'; // test election fallback
   } catch (err) {
     console.error('Google elections list error:', err.message);
     return null;
