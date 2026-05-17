@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient";
+import DistrictCheck from "./DistrictCheck";
 
 // ─── CONTENT GUARDS (client-side pre-filter) ──────────────────────────────
 const BLOCKED = [
@@ -58,6 +59,7 @@ export default function App() {
   const [dataSources, setDataSources] = useState([]);
   const [hasLiveData, setHasLiveData] = useState(false);
   const [searchMode, setSearchMode] = useState("candidate"); // candidate | address | election
+  const [showDistrictCheck, setShowDistrictCheck] = useState(false);
 
   // ── Auth state listener
   useEffect(() => {
@@ -234,6 +236,9 @@ export default function App() {
             <button style={s.logoutBtn} onClick={handleLogout}>Log Out</button>
           </div>
           <p style={s.mission}>Party labels may be hidden from your ballot — this tool isn't.</p>
+          <button style={s.districtBtn} onClick={() => setShowDistrictCheck(true)}>
+            🗺️ Did My District Change?
+          </button>
         </header>
 
         {/* Usage Dashboard */}
@@ -417,6 +422,9 @@ export default function App() {
           <p style={{marginTop:4,color:"#2d4060"}}>Protecting your right to an informed vote</p>
         </footer>
       </div>
+
+      {showDistrictCheck && <DistrictCheck onClose={() => setShowDistrictCheck(false)} />}
+
       <style>{css}</style>
     </div>
   );
@@ -466,6 +474,7 @@ const s = {
   sub: { fontSize:11, color:"#6b87a8", letterSpacing:2, textTransform:"uppercase", marginTop:4 },
   mission: { fontSize:13, color:"#8faabf", borderLeft:"3px solid #B22234", paddingLeft:12, fontStyle:"italic" },
   logoutBtn: { background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", color:"#8faabf", borderRadius:7, padding:"7px 16px", fontSize:12, cursor:"pointer", fontFamily:"'Source Sans 3',sans-serif" },
+  districtBtn: { marginTop:10, background:"rgba(178,34,52,0.15)", border:"1px solid rgba(178,34,52,0.4)", color:"#fca5a5", borderRadius:8, padding:"8px 16px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'Source Sans 3',sans-serif" },
 
   // Dashboard
   dashboard: { background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:12, padding:16, marginBottom:18, display:"flex", flexWrap:"wrap", gap:16, alignItems:"center" },
