@@ -514,7 +514,58 @@ async function fetchOpenStatesLegislators(name = null) {
   }
 }
 
-// ─── SOURCE 2: GOOGLE CIVIC — ACTIVE ELECTIONS LIST ──────────────────────────
+// ─── SOURCE 2: GOOGLE CIVIC — REPRESENTATIVE INFO BY ADDRESS ─────────────────
+// Returns federal + state elected officials for a given address
+// Docs: https://developers.google.com/civic-information/docs/v2/representatives
+async function fetchRepresentatives(address) {
+  const key = process.env.GOOGLE_CIVIC_API_KEY;
+  if (!key) return null;
+
+  try {
+    const fedParams = new URLSearchParams({
+      key,
+      address: `${address}, Georgia`,
+      includeOffices: 'true',
+      levels: 'country',
+    });
+    const stateParams = new URLSearchParams({
+      key,
+      address: `${address}, Georgia`,
+      includeOffices: 'true',
+      levels: 'administrativeArea1',
+    });
+
+    const [fedRes, stateRes] = await Promise.all([
+      fetch(`https://www.googleapis.com/civicinfo/v2/representatives?${fedParams}`),
+      fetch(`https://www.googleapis.com/civicinfo/v2/representatives?${stateParams}`),
+    ]);
+
+    const reps = [];
+    for (const r of [fedRes, stateRes]) {
+      if (!r.ok) continue;
+      const d = await r.json();
+      for (const office of (d.offices || [])) {
+        for (const idx of (office.officialIndices || [])) {
+          const o = (d.officials || [])[idx];
+          if (o) reps.push({
+            office: office.name,
+            name: o.name,
+            party: o.party || 'Not listed',
+            phone: o.phones?.[0] || null,
+            website: o.urls?.[0] || null,
+            email: o.emails?.[0] || null,
+          });
+        }
+      }
+    }
+    return reps.length ? reps : null;
+  } catch (err) {
+    console.error('Representatives API error:', err.message);
+    return null;
+  }
+}
+
+// ─── SOURCE 3: GOOGLE CIVIC — ACTIVE ELECTIONS LIST ──────────────────────────
 // Gets current active election IDs for Georgia — needed for voterInfoQuery
 // Same Google Cloud key, same project, no extra cost
 async function fetchActiveGeorgiaElectionId() {
@@ -548,11 +599,12 @@ async function fetchActiveGeorgiaElectionId() {
   }
 }
 
-// ─── SOURCE 3: GOOGLE CIVIC — VOTER INFO QUERY ───────────────────────────────
-// For a given address + election ID: polling place, early voting, drop boxes,
+// ─── SOURCE 4: GOOGLE CIVIC — VOTER INFO QUERY ───────────────────────────────
+// For a given address: polling place, early voting, drop boxes,
 // election dates, candidates on the ballot, and election official contacts
+// NOTE: No electionId passed — Google auto-matches the right election for the address
 // Docs: https://developers.google.com/civic-information/docs/v2/elections/voterInfoQuery
-async function fetchVoterInfo(address, electionId) {
+async function fetchVoterInfo(address) {
   const key = process.env.GOOGLE_CIVIC_API_KEY;
   if (!key) return null;
 
@@ -562,7 +614,6 @@ async function fetchVoterInfo(address, electionId) {
       address: `${address}, Georgia`,
       returnAllAvailableData: 'true',
     });
-    if (electionId) params.append('electionId', electionId);
 
     const url = `https://www.googleapis.com/civicinfo/v2/voterinfo?${params}`;
     const res = await fetch(url);
@@ -648,9 +699,10 @@ function detectQueryType(query) {
 }
 
 // ─── FORMAT LIVE DATA INTO CLAUDE CONTEXT ─────────────────────────────────────
-function buildLiveContext(legislators, voterInfo) {
+function buildLiveContext(legislators, voterInfo, representatives) {
   let ctx = '';
 
+  // 1st priority: OpenStates legislators
   if (legislators?.length) {
     ctx += `\n\n=== LIVE DATA: OPENSTATES / PLURAL API ===`;
     ctx += `\nSource: Official state legislative records | Updated: ${new Date().toLocaleDateString()}`;
@@ -725,6 +777,18 @@ function buildLiveContext(legislators, voterInfo) {
     }
   }
 
+  // 2nd priority supplement: Google Civic representatives (federal + state officials)
+  if (representatives?.length) {
+    ctx += `\n\n=== LIVE DATA: GOOGLE CIVIC — YOUR ELECTED REPRESENTATIVES ===`;
+    ctx += `\nSource: Google Civic Information API | Updated: ${new Date().toLocaleDateString()}`;
+    for (const r of representatives) {
+      ctx += `\n\n• ${r.office}: ${r.name} (${r.party})`;
+      if (r.phone) ctx += `\n  Phone: ${r.phone}`;
+      if (r.website) ctx += `\n  Website: ${r.website}`;
+      if (r.email) ctx += `\n  Email: ${r.email}`;
+    }
+  }
+
   return ctx;
 }
 
@@ -757,21 +821,27 @@ RESPONSE FORMAT:
 
 **Data Source:** [🟢 Live verified data — [API name] | 🟡 AI training data — verify before relying on it]
 
+[For address / "My Representatives" queries — present in this order:]
+## Your Elected Representatives
+(From OpenStates + Google Civic live data — list each rep with office, party, phone, website)
+
+## Upcoming Election & Your Ballot
+(From Google Civic voter info — election name, date, candidates on your specific ballot with party)
+
+## Polling & Voting Logistics
+**Your Polling Place:** [name and address, hours]
+**Early Voting Sites:** [name, address, dates, hours]
+**Ballot Drop Boxes:** [locations]
+**Election Official Contact:** [name, phone, email]
+
 [For candidate queries:]
 **Party:** [affiliation]
-**Office:** [current or sought]  
+**Office:** [current or sought]
 **District/Chamber:** [details]
 **Contact:** [official website, email if available]
 **Key Policy Positions:** (factual, balanced, no editorializing)
 - [Position]
 - [Position]
-
-[For address/voting logistics queries:]
-**Your Polling Place:** [name and address]
-**Early Voting:** [sites, dates, hours]
-**Drop Boxes:** [locations]
-**Candidates on Your Ballot:** [list with party]
-**Election Official Contact:** [name, phone, email]
 
 ---
 *🔗 Verify at: sos.ga.gov · mvp.sos.ga.gov (My Voter Page) · ballotpedia.org · vote411.org*
@@ -806,14 +876,15 @@ export default async function handler(req, res) {
   const queryType = detectQueryType(clean);
   let legislators = null;
   let voterInfo = null;
+  let representatives = null;
 
   try {
     if (queryType === 'address') {
-      // For address queries: get election ID then fetch voter info + legislators in parallel
-      const electionId = await fetchActiveGeorgiaElectionId();
-      [voterInfo, legislators] = await Promise.all([
-        fetchVoterInfo(clean, electionId),
-        fetchOpenStatesLegislators(),  // pull GA legislators to show who represents them
+      // Fetch voter info (no electionId — Google auto-matches), reps, and legislators in parallel
+      [voterInfo, representatives, legislators] = await Promise.all([
+        fetchVoterInfo(clean),
+        fetchRepresentatives(clean),
+        fetchOpenStatesLegislators(),
       ]);
     } else if (queryType === 'candidate') {
       // Extract potential name from query for targeted search
@@ -821,18 +892,18 @@ export default async function handler(req, res) {
       const nameHint = nameMatch ? nameMatch[1].trim() : null;
       legislators = await fetchOpenStatesLegislators(nameHint);
     } else {
-      // Election info: pull voter info for Atlanta as baseline Georgia election data
-      const electionId = await fetchActiveGeorgiaElectionId();
-      voterInfo = await fetchVoterInfo('100 Peachtree St NW Atlanta', electionId);
+      // Election info: pull voter info without electionId for auto-match
+      voterInfo = await fetchVoterInfo('100 Peachtree St NW Atlanta');
     }
   } catch (err) {
     console.error('Live data fetch error (non-fatal):', err.message);
   }
 
-  const liveContext = buildLiveContext(legislators, voterInfo);
+  const liveContext = buildLiveContext(legislators, voterInfo, representatives);
   const dataSources = [
     legislators?.length && 'OpenStates / Plural API (GA legislators)',
-    voterInfo && 'Google Civic Information API (voter info)',
+    representatives?.length && 'Google Civic API (your representatives)',
+    voterInfo && 'Google Civic API (voter info)',
   ].filter(Boolean);
   const hasLiveData = dataSources.length > 0;
 
