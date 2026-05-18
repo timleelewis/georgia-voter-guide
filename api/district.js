@@ -1,6 +1,7 @@
 // api/district.js — Vercel Serverless Function
 // "Find My District" — returns structured district + rep data for a Georgia address
-// Uses Google Civic representativeInfoByAddress (no AI, no search quota used)
+// Uses Google Civic divisionsByAddress (new endpoint, reps API was shut down April 2025)
+// Then enriches with OpenStates for rep names, party, contact info
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
@@ -15,110 +16,141 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Address is required.' });
   }
 
-  const key = process.env.GOOGLE_CIVIC_API_KEY;
-  if (!key) {
-    return res.status(500).json({ error: 'Google Civic API key not configured.', debug: { hasKey: false } });
-  }
+  const civicKey = process.env.GOOGLE_CIVIC_API_KEY;
+  const openStatesKey = process.env.OPENSTATES_API_KEY;
 
   const fullAddress = address.includes('Georgia') || address.includes(', GA')
     ? address
     : `${address}, Georgia`;
 
-  try {
-    // Google Civic representativeInfoByAddress — GET request
-    // Docs: https://developers.google.com/civic-information/docs/v2/representatives/representativeInfoByAddress
-    const params = new URLSearchParams({ key, address: fullAddress });
+  // ── STEP 1: Get OCD division IDs from Google Civic divisionsByAddress
+  let districtInfo = {};
+  let ocdIds = [];
 
-    const civicRes = await fetch(
-      `https://www.googleapis.com/civicinfo/v2/representatives?${params}`
-    );
-    const civicData = await civicRes.json();
+  if (civicKey) {
+    try {
+      const params = new URLSearchParams({ key: civicKey, address: fullAddress });
+      const divRes = await fetch(`https://www.googleapis.com/civicinfo/v2/divisionsByAddress?${params}`);
+      const divData = await divRes.json();
 
-    if (!civicRes.ok) {
-      const msg = civicData.error?.message || 'Google Civic API error';
-      // 404 "Method not found" = Civic Information API not enabled in Google Cloud Console
-      // Fix: console.cloud.google.com → APIs & Services → Enable "Google Civic Information API"
-      if (civicRes.status === 404) {
-        return res.status(502).json({
-          error: 'Representative lookup is unavailable. The Google Civic Information API may not be enabled for this key.',
-          civicStatus: civicRes.status,
-          civicError: civicData.error,
-          fix: 'Enable the Civic Information API at console.cloud.google.com → APIs & Services → Library',
-        });
+      if (divRes.ok && divData.divisions) {
+        for (const ocdId of Object.keys(divData.divisions)) {
+          ocdIds.push(ocdId);
+          const cdMatch  = ocdId.match(/\/cd:(\d+)/);
+          const slduMatch = ocdId.match(/\/sldu:(\d+)/);
+          const sldlMatch = ocdId.match(/\/sldl:(\d+)/);
+          if (cdMatch)   districtInfo.congressional = `District ${cdMatch[1]}`;
+          if (slduMatch) districtInfo.stateSenate    = `District ${slduMatch[1]}`;
+          if (sldlMatch) districtInfo.stateHouse     = `District ${sldlMatch[1]}`;
+        }
       }
-      return res.status(502).json({ error: msg, civicStatus: civicRes.status, civicError: civicData.error });
+    } catch (err) {
+      console.error('divisionsByAddress error:', err.message);
     }
-
-    if (civicData.error) {
-      return res.status(502).json({ error: civicData.error.message });
-    }
-
-    const offices = civicData.offices || [];
-    const officials = civicData.officials || [];
-    const divisions = civicData.divisions || {};
-
-    // Build structured district cards grouped by level
-    const LEVEL_ORDER = ['country', 'administrativeArea1', 'administrativeArea2', 'locality'];
-    const LEVEL_LABELS = {
-      country: 'Federal',
-      administrativeArea1: 'State',
-      administrativeArea2: 'County',
-      locality: 'Local',
-    };
-
-    const grouped = {};
-    for (const office of offices) {
-      const level = office.levels?.[0] || 'other';
-      if (!grouped[level]) grouped[level] = [];
-
-      for (const idx of (office.officialIndices || [])) {
-        const o = officials[idx];
-        if (!o) continue;
-        grouped[level].push({
-          office: office.name,
-          name: o.name,
-          party: o.party || 'Not listed',
-          phone: o.phones?.[0] || null,
-          website: o.urls?.[0] || null,
-          email: o.emails?.[0] || null,
-          photoUrl: o.photoUrl || null,
-          channels: (o.channels || []).map(c => ({ type: c.type, id: c.id })),
-        });
-      }
-    }
-
-    // Extract district numbers from division keys
-    // e.g. ocd-division/country:us/state:ga/cd:6  → Congressional District 6
-    const districtInfo = {};
-    for (const [divId] of Object.entries(divisions)) {
-      const cdMatch = divId.match(/\/cd:(\d+)/);
-      const slduMatch = divId.match(/\/sldu:(\d+)/);
-      const sldlMatch = divId.match(/\/sldl:(\d+)/);
-      if (cdMatch) districtInfo.congressional = `District ${cdMatch[1]}`;
-      if (slduMatch) districtInfo.stateSenate = `District ${slduMatch[1]}`;
-      if (sldlMatch) districtInfo.stateHouse = `District ${sldlMatch[1]}`;
-    }
-
-    // Normalized address Google returned
-    const normalizedAddress = civicData.normalizedInput
-      ? [
-          civicData.normalizedInput.line1,
-          civicData.normalizedInput.city,
-          civicData.normalizedInput.state,
-          civicData.normalizedInput.zip,
-        ].filter(Boolean).join(', ')
-      : fullAddress;
-
-    return res.status(200).json({
-      normalizedAddress,
-      districtInfo,
-      representatives: grouped,
-      levelOrder: LEVEL_ORDER,
-      levelLabels: LEVEL_LABELS,
-    });
-
-  } catch (err) {
-    console.error('District lookup error:', err.message);
-    return res.status(500).json({ error: `District lookup failed: ${err.message}`, stack: err.stack?.split('\n')[0] });
   }
+
+  // ── STEP 2: Get reps from OpenStates using district numbers
+  const grouped = {
+    country: [],
+    administrativeArea1: [],
+    administrativeArea2: [],
+  };
+
+  if (openStatesKey) {
+    try {
+      // Build district-specific queries from what we found
+      const queries = [];
+
+      if (districtInfo.congressional) {
+        const num = districtInfo.congressional.replace('District ', '');
+        queries.push(
+          fetch(`https://v3.openstates.org/people?jurisdiction=ocd-jurisdiction/country:us/state:ga/government&district=${num}&org_classification=legislature&per_page=5`, {
+            headers: { 'X-API-KEY': openStatesKey, 'Accept': 'application/json' }
+          })
+        );
+      }
+
+      // Get all GA state legislators (senate + house) — filter by district client-side
+      queries.push(
+        fetch(`https://v3.openstates.org/people?jurisdiction=ocd-jurisdiction/country:us/state:ga/government&per_page=20`, {
+          headers: { 'X-API-KEY': openStatesKey, 'Accept': 'application/json' }
+        })
+      );
+
+      const results = await Promise.all(queries);
+
+      for (const r of results) {
+        if (!r.ok) continue;
+        const d = await r.json();
+        for (const p of (d.results || [])) {
+          const role = p.current_role;
+          if (!role) continue;
+
+          const rep = {
+            office: `${role.title} — ${role.org_classification === 'upper' ? 'State Senate' : 'State House'} District ${role.district}`,
+            name: p.name,
+            party: p.party || 'Not listed',
+            phone: null,
+            website: p.links?.[0]?.url || null,
+            email: p.email || null,
+          };
+
+          // Match to user's districts
+          const isSenate = role.org_classification === 'upper';
+          const isHouse  = role.org_classification === 'lower';
+          const distNum  = String(role.district);
+
+          const userSenateNum = districtInfo.stateSenate?.replace('District ', '');
+          const userHouseNum  = districtInfo.stateHouse?.replace('District ', '');
+
+          if (isSenate && distNum === userSenateNum) grouped.administrativeArea1.push(rep);
+          if (isHouse  && distNum === userHouseNum)  grouped.administrativeArea1.push(rep);
+        }
+      }
+    } catch (err) {
+      console.error('OpenStates error:', err.message);
+    }
+  }
+
+  // ── STEP 3: Add US Congress members from OpenStates (federal level)
+  if (openStatesKey && districtInfo.congressional) {
+    try {
+      const cdNum = districtInfo.congressional.replace('District ', '');
+      const fedRes = await fetch(
+        `https://v3.openstates.org/people?jurisdiction=ocd-jurisdiction/country:us/government&district=${cdNum}&per_page=5`,
+        { headers: { 'X-API-KEY': openStatesKey, 'Accept': 'application/json' } }
+      );
+      if (fedRes.ok) {
+        const fedData = await fedRes.json();
+        for (const p of (fedData.results || [])) {
+          grouped.country.push({
+            office: `U.S. ${p.current_role?.title || 'Representative'} — ${districtInfo.congressional}`,
+            name: p.name,
+            party: p.party || 'Not listed',
+            phone: null,
+            website: p.links?.[0]?.url || null,
+            email: p.email || null,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('OpenStates federal error:', err.message);
+    }
+  }
+
+  const LEVEL_ORDER  = ['country', 'administrativeArea1', 'administrativeArea2'];
+  const LEVEL_LABELS = {
+    country: 'Federal',
+    administrativeArea1: 'State',
+    administrativeArea2: 'County / Local',
+  };
+
+  return res.status(200).json({
+    normalizedAddress: fullAddress,
+    districtInfo,
+    ocdIds,
+    representatives: grouped,
+    levelOrder: LEVEL_ORDER,
+    levelLabels: LEVEL_LABELS,
+  });
 }
