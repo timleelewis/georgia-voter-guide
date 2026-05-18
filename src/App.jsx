@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import DistrictCheck from "./DistrictCheck";
+import CandidateSearch from "./CandidateSearch";
 
 // ─── CONTENT GUARDS (client-side pre-filter) ──────────────────────────────
 const BLOCKED = [
@@ -40,6 +41,42 @@ const quickSearches = [
 // Set a one-time or recurring price, copy the link here
 const STRIPE_DONATE_URL = "https://buy.stripe.com/3cI7sN86F7OF42UfZjfjG00";
 
+// ─── UPCOMING GEORGIA ELECTIONS ───────────────────────────────────────────
+// Update this manually as elections are announced
+// Sources: sos.ga.gov · ballotpedia.org/Georgia_elections,_2026
+const UPCOMING_ELECTIONS = [
+  {
+    name: "Georgia Primary Election",
+    date: "May 19, 2026",
+    daysLabel: "Today",
+    races: ["Governor", "U.S. Senate", "State Legislature", "Local Offices"],
+    urgent: true,
+  },
+  {
+    name: "Georgia General Election",
+    date: "November 3, 2026",
+    daysLabel: "Nov 3",
+    races: ["Governor", "U.S. Senate", "All 14 Congressional Seats", "State Legislature"],
+    urgent: false,
+  },
+];
+
+// ─── SHARE HELPERS ────────────────────────────────────────────────────────
+const SHARE_URL = "https://gaelectionguide.org";
+const SHARE_TEXT = "Know who's on your Georgia ballot — party labels may be removed, but your right to know isn't. Free nonpartisan voter guide:";
+
+function shareToTwitter() {
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(SHARE_TEXT)}&url=${encodeURIComponent(SHARE_URL)}`, '_blank', 'width=550,height=420');
+}
+function shareToFacebook() {
+  window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(SHARE_URL)}`, '_blank', 'width=580,height=400');
+}
+function shareNative() {
+  if (navigator.share) {
+    navigator.share({ title: "Georgia Voter Guide", text: SHARE_TEXT, url: SHARE_URL });
+  }
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("auth"); // auth | guide
@@ -48,6 +85,30 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+
+  // Live ballot preview on auth screen
+  const [previewRaces, setPreviewRaces] = useState([]);
+  useEffect(() => {
+    // Fetch a sample of statewide races to show on the login screen
+    fetch("/api/candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ search: "Governor", limit: 10 }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.candidates?.length) {
+          // Group by contest_name for display
+          const grouped = {};
+          for (const c of d.candidates) {
+            if (!grouped[c.contest_name]) grouped[c.contest_name] = [];
+            grouped[c.contest_name].push(c);
+          }
+          setPreviewRaces(Object.entries(grouped).slice(0, 4));
+        }
+      })
+      .catch(() => {}); // silent fail — preview is non-critical
+  }, []);
 
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -187,6 +248,58 @@ export default function App() {
           <p style={s.authSub}>Nonpartisan · Free · Secure</p>
           <p style={s.authDesc}>Know who's on your ballot. Party labels may be removed — your right to know isn't.</p>
 
+          {/* Election notification banner */}
+          <div style={s.electionBanner}>
+            <div style={s.electionBannerIcon}>🗳️</div>
+            <div style={{flex:1}}>
+              {UPCOMING_ELECTIONS.map((el, i) => (
+                <div key={i} style={{marginBottom: i < UPCOMING_ELECTIONS.length - 1 ? 8 : 0}}>
+                  <div style={s.electionBannerRow}>
+                    <span style={{...s.electionBannerDate, ...(el.urgent ? s.electionBannerDateUrgent : {})}}>
+                      {el.urgent ? "🔴 " : "📅 "}{el.date}
+                    </span>
+                    <span style={s.electionBannerName}>{el.name}</span>
+                  </div>
+                  <p style={s.electionBannerRaces}>{el.races.join(" · ")}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p style={s.electionBannerCta}>Log in to look up candidates, find your polling place, and see who's on your ballot.</p>
+
+          {/* 2026 ballot preview — live from Supabase */}
+          <div style={s.ballotPreview}>
+            <p style={s.ballotPreviewLabel}>2026 Major Georgia Races</p>
+            {previewRaces.length === 0 ? (
+              <p style={{fontSize:11, color:"#3d5470", textAlign:"center", padding:"8px 0"}}>Loading candidates…</p>
+            ) : (
+              previewRaces.map(([office, candidates], i) => {
+                return (
+                  <div key={i} style={s.ballotRace}>
+                    <p style={s.ballotRaceOffice}>{office}</p>
+                    <div style={s.ballotCandidates}>
+                      {candidates.map((c, j) => {
+                        const isRep = c.political_party === "Republican";
+                        const isDem = c.political_party === "Democrat" || c.political_party === "Democratic";
+                        return (
+                          <span key={j} style={{
+                            ...s.ballotCandidate,
+                            background: isRep ? "rgba(178,34,52,0.12)" : isDem ? "rgba(30,80,200,0.12)" : "rgba(255,255,255,0.05)",
+                            borderColor: isRep ? "rgba(178,34,52,0.3)" : isDem ? "rgba(30,80,200,0.3)" : "rgba(255,255,255,0.1)",
+                            color: isRep ? "#fca5a5" : isDem ? "#93b8f0" : "#8faabf",
+                          }}>
+                            {c.candidate_name} · {c.political_party}{c.incumbent ? " ★" : ""}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <p style={s.ballotPreviewNote}>★ Incumbent · Log in to see your full district ballot</p>
+          </div>
+
           <div style={s.authTabs}>
             {["login","signup"].map(m => (
               <button key={m} style={{...s.authTab, ...(authMode===m?s.authTabActive:{})}}
@@ -311,6 +424,7 @@ export default function App() {
             { id: "candidate", label: "🔍 Candidate Lookup" },
             { id: "address",   label: "📍 My Representatives" },
             { id: "election",  label: "🗓️ Election Dates" },
+            { id: "ballot",    label: "📋 2026 Ballot" },
           ].map(m => (
             <button key={m.id}
               style={{...s.modeTab, ...(searchMode===m.id ? s.modeTabActive : {})}}
@@ -321,7 +435,11 @@ export default function App() {
           ))}
         </div>
 
-        {/* Search */}
+        {/* Ballot tab — full candidate search, replaces search UI */}
+        {searchMode === "ballot" && <CandidateSearch />}
+
+        {/* Search — hidden when ballot tab is active */}
+        {searchMode !== "ballot" && <>
         <div style={s.searchRow} className="search-row">
           <span>{ searchMode==="address" ? "📍" : searchMode==="election" ? "🗓️" : "🔍" }</span>
           <input style={s.input}
@@ -426,6 +544,14 @@ export default function App() {
                 ☕ Support
               </a>
             </div>
+            <div style={s.shareBar}>
+              <span style={s.shareBarLabel}>Share this tool:</span>
+              <button style={s.shareBtn} onClick={shareToTwitter} aria-label="Share on X/Twitter">𝕏 Twitter</button>
+              <button style={s.shareBtn} onClick={shareToFacebook} aria-label="Share on Facebook">f Facebook</button>
+              {"share" in navigator && (
+                <button style={{...s.shareBtn, ...s.shareBtnNative}} onClick={shareNative} aria-label="Share">↑ Share</button>
+              )}
+            </div>
           </div>
         )}
 
@@ -442,6 +568,7 @@ export default function App() {
             ))}
           </div>
         )}
+        </> /* end searchMode !== ballot */}
 
         <footer style={s.footer}>
           <p>Nonpartisan · AI-assisted · Does not endorse any candidate or party</p>
@@ -480,10 +607,10 @@ const css = `
       grid-column: 1 / -1;
     }
 
-    /* Mode tabs — full width stacked pills */
+    /* Mode tabs — 2x2 grid on mobile for 4 tabs */
     .mode-tabs {
       display: grid !important;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 6px !important;
     }
     .mode-tab {
@@ -538,7 +665,17 @@ const s = {
   authLogo: { fontSize:44, textAlign:"center", marginBottom:12 },
   authTitle: { fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:900, color:"#fff", textAlign:"center", marginBottom:4 },
   authSub: { fontSize:11, color:"#6b87a8", letterSpacing:2, textTransform:"uppercase", textAlign:"center", marginBottom:12 },
-  authDesc: { fontSize:13, color:"#8faabf", textAlign:"center", lineHeight:1.6, marginBottom:20, fontStyle:"italic", borderLeft:"3px solid #B22234", paddingLeft:12 },
+  authDesc: { fontSize:13, color:"#8faabf", textAlign:"center", lineHeight:1.6, marginBottom:16, fontStyle:"italic", borderLeft:"3px solid #B22234", paddingLeft:12 },
+
+  // Election banner on auth screen
+  electionBanner: { display:"flex", gap:10, background:"rgba(178,34,52,0.08)", border:"1px solid rgba(178,34,52,0.25)", borderRadius:10, padding:"12px 14px", marginBottom:10, alignItems:"flex-start" },
+  electionBannerIcon: { fontSize:20, flexShrink:0, marginTop:1 },
+  electionBannerRow: { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:2 },
+  electionBannerDate: { fontSize:11, fontWeight:700, color:"#fbbf24", whiteSpace:"nowrap" },
+  electionBannerDateUrgent: { color:"#f87171" },
+  electionBannerName: { fontSize:12, fontWeight:600, color:"#dce8f5" },
+  electionBannerRaces: { fontSize:11, color:"#6b87a8", lineHeight:1.5, margin:0 },
+  electionBannerCta: { fontSize:12, color:"#6b87a8", textAlign:"center", marginBottom:16, lineHeight:1.5 },
   authTabs: { display:"flex", background:"rgba(255,255,255,0.04)", borderRadius:8, padding:3, marginBottom:20, gap:4 },
   authTab: { flex:1, padding:"8px 0", border:"none", borderRadius:6, background:"transparent", color:"#6b87a8", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'Source Sans 3',sans-serif" },
   authTabActive: { background:"#B22234", color:"#fff" },
@@ -631,6 +768,21 @@ const s = {
   donateCardTitle: { fontSize:12, fontWeight:600, color:"#6ee7a0", marginBottom:2 },
   donateCardSub: { fontSize:11, color:"#3a5a50", lineHeight:1.5 },
   donateCardBtn: { flexShrink:0, background:"rgba(60,180,100,0.12)", border:"1px solid rgba(60,180,100,0.3)", color:"#6ee7a0", borderRadius:8, padding:"8px 16px", fontSize:12, fontWeight:600, textDecoration:"none", fontFamily:"'Source Sans 3',sans-serif", whiteSpace:"nowrap" },
+
+  // Share bar (inside result)
+  shareBar: { display:"flex", alignItems:"center", gap:8, padding:"10px 18px", borderTop:"1px solid rgba(255,255,255,0.05)", flexWrap:"wrap" },
+  shareBarLabel: { fontSize:11, color:"#3d5470", marginRight:4 },
+  shareBtn: { fontSize:11, fontWeight:600, color:"#8faabf", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:6, padding:"5px 12px", cursor:"pointer", fontFamily:"'Source Sans 3',sans-serif" },
+  shareBtnNative: { background:"rgba(178,34,52,0.1)", borderColor:"rgba(178,34,52,0.3)", color:"#fca5a5" },
+
+  // Ballot preview on auth screen
+  ballotPreview: { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:"12px 14px", marginBottom:16 },
+  ballotPreviewLabel: { fontSize:10, color:"#3d5470", textTransform:"uppercase", letterSpacing:1.5, marginBottom:10 },
+  ballotRace: { marginBottom:10 },
+  ballotRaceOffice: { fontSize:11, fontWeight:600, color:"#6b87a8", marginBottom:5 },
+  ballotCandidates: { display:"flex", flexWrap:"wrap", gap:6 },
+  ballotCandidate: { fontSize:11, border:"1px solid", borderRadius:20, padding:"3px 10px", fontWeight:500 },
+  ballotPreviewNote: { fontSize:10, color:"#2d4060", marginTop:8, textAlign:"center" },
 
   // Auth donate
   authDonate: { marginTop:20, paddingTop:16, borderTop:"1px solid rgba(255,255,255,0.07)", textAlign:"center" },
