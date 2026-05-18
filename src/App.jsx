@@ -35,6 +35,11 @@ const quickSearches = [
   "Georgia Senate district 6",
 ];
 
+// ─── STRIPE DONATE LINK ───────────────────────────────────────────────────
+// Create at: dashboard.stripe.com → Payment Links → Create link
+// Set a one-time or recurring price, copy the link here
+const STRIPE_DONATE_URL = "https://buy.stripe.com/3cI7sN86F7OF42UfZjfjG00";
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("auth"); // auth | guide
@@ -210,6 +215,13 @@ export default function App() {
               <div key={i} style={s.authFeature}><span style={s.check}>✓</span>{f}</div>
             ))}
           </div>
+
+          <div style={s.authDonate}>
+            <p style={s.authDonateText}>This tool is free and open source.</p>
+            <a href={STRIPE_DONATE_URL} target="_blank" rel="noopener noreferrer" style={s.donateBtn}>
+              ☕ Support the Project
+            </a>
+          </div>
         </div>
       </div>
       <style>{css}</style>
@@ -233,6 +245,9 @@ export default function App() {
               <h1 style={s.title}>Georgia Voter Guide</h1>
               <p style={s.sub}>Nonpartisan · Secure · Transparent</p>
             </div>
+            <a href={STRIPE_DONATE_URL} target="_blank" rel="noopener noreferrer" style={s.keepFreeBtn}>
+              Keep this free →
+            </a>
             <button style={s.logoutBtn} onClick={handleLogout}>Log Out</button>
           </div>
           <p style={s.mission}>Party labels may be hidden from your ballot — this tool isn't.</p>
@@ -402,6 +417,15 @@ export default function App() {
               ⚠️ Always verify at <strong>sos.ga.gov</strong> · <strong>ballotpedia.org</strong> · <strong>vote411.org</strong>
               {hasLiveData && <span style={{color:"#6ee7a0", marginLeft:8}}>· Live data verified {new Date().toLocaleDateString()}</span>}
             </div>
+            <div style={s.donateCard}>
+              <div style={s.donateCardLeft}>
+                <p style={s.donateCardTitle}>Found this useful?</p>
+                <p style={s.donateCardSub}>This tool is free, nonpartisan, and open source. A small contribution keeps it running.</p>
+              </div>
+              <a href={STRIPE_DONATE_URL} target="_blank" rel="noopener noreferrer" style={s.donateCardBtn}>
+                ☕ Support
+              </a>
+            </div>
           </div>
         )}
 
@@ -421,7 +445,7 @@ export default function App() {
 
         <footer style={s.footer}>
           <p>Nonpartisan · AI-assisted · Does not endorse any candidate or party</p>
-          <p style={{marginTop:4,color:"#2d4060"}}>Protecting your right to an informed vote</p>
+          <p style={{marginTop:4,color:"#2d4060"}}>Protecting your right to an informed vote · <a href="https://github.com/YOUR-USERNAME/georgia-voter-guide" target="_blank" rel="noopener noreferrer" style={{color:"#3d5470",textDecoration:"none"}}>Open Source</a></p>
         </footer>
       </div>
 
@@ -537,6 +561,7 @@ const s = {
   mission: { fontSize:13, color:"#8faabf", borderLeft:"3px solid #B22234", paddingLeft:12, fontStyle:"italic" },
   logoutBtn: { background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", color:"#8faabf", borderRadius:7, padding:"7px 16px", fontSize:12, cursor:"pointer", fontFamily:"'Source Sans 3',sans-serif" },
   districtBtn: { marginTop:10, background:"rgba(178,34,52,0.15)", border:"1px solid rgba(178,34,52,0.4)", color:"#fca5a5", borderRadius:8, padding:"8px 16px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'Source Sans 3',sans-serif" },
+  keepFreeBtn: { fontSize:11, color:"#6ee7a0", textDecoration:"none", background:"rgba(60,180,100,0.08)", border:"1px solid rgba(60,180,100,0.2)", borderRadius:20, padding:"5px 12px", fontWeight:600, whiteSpace:"nowrap", fontFamily:"'Source Sans 3',sans-serif" },
 
   // Dashboard
   dashboard: { background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:12, padding:16, marginBottom:18, display:"flex", flexWrap:"wrap", gap:16, alignItems:"center" },
@@ -599,4 +624,16 @@ const s = {
   histTime: { fontSize:10, color:"#2d4060", minWidth:55 },
   histQ: { fontSize:12, color:"#6b87a8" },
   footer: { textAlign:"center", color:"#2d4060", fontSize:12, paddingTop:20, borderTop:"1px solid rgba(255,255,255,0.05)" },
+
+  // Donate card (inside result)
+  donateCard: { display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, padding:"12px 18px", background:"rgba(60,180,100,0.04)", borderTop:"1px solid rgba(60,180,100,0.1)" },
+  donateCardLeft: { flex:1 },
+  donateCardTitle: { fontSize:12, fontWeight:600, color:"#6ee7a0", marginBottom:2 },
+  donateCardSub: { fontSize:11, color:"#3a5a50", lineHeight:1.5 },
+  donateCardBtn: { flexShrink:0, background:"rgba(60,180,100,0.12)", border:"1px solid rgba(60,180,100,0.3)", color:"#6ee7a0", borderRadius:8, padding:"8px 16px", fontSize:12, fontWeight:600, textDecoration:"none", fontFamily:"'Source Sans 3',sans-serif", whiteSpace:"nowrap" },
+
+  // Auth donate
+  authDonate: { marginTop:20, paddingTop:16, borderTop:"1px solid rgba(255,255,255,0.07)", textAlign:"center" },
+  authDonateText: { fontSize:11, color:"#3d5470", marginBottom:10 },
+  donateBtn: { display:"inline-block", background:"rgba(60,180,100,0.1)", color:"#6ee7a0", border:"1px solid rgba(60,180,100,0.25)", borderRadius:9, padding:"9px 20px", fontSize:13, fontWeight:600, textDecoration:"none", fontFamily:"'Source Sans 3',sans-serif" },
 };
