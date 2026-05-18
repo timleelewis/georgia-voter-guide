@@ -472,16 +472,40 @@ const BLOCKED_PATTERNS = [
 ];
 const isBlocked = (text) => BLOCKED_PATTERNS.some(p => p.test(text));
 
-// ─── SOURCE 1: OPENSTATES / PLURAL API ───────────────────────────────────────
-// Georgia state legislators — party, district, contact, recent bills
-// Get free key: open.pluralpolicy.com → register → API Keys
+// ─── SOURCE 1: SUPABASE CANDIDATE LOOKUP ─────────────────────────────────────
+// Queries our curated qualified_candidates table — has verified party data
+async function fetchSupabaseCandidates(name) {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey || !name) return null;
+
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/search_candidates`, {
+      method: 'POST',
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ search_term: name }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) && data.length ? data : null;
+  } catch (err) {
+    console.error('Supabase candidate lookup error:', err.message);
+    return null;
+  }
+}
+
+// ─── SOURCE 2: OPENSTATES / PLURAL API ───────────────────────────────────────
+// Georgia state legislators — party, district, contact, sponsored bills
 // Docs: https://docs.openstates.org/api-v3/
 async function fetchOpenStatesLegislators(name = null) {
   const key = process.env.OPENSTATES_API_KEY;
   if (!key) return null;
 
   try {
-    // Search Georgia legislators — optionally filter by name
     const params = new URLSearchParams({
       jurisdiction: 'ocd-jurisdiction/country:us/state:ga/government',
       per_page: 10,
@@ -494,20 +518,48 @@ async function fetchOpenStatesLegislators(name = null) {
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (!data.results?.length) return null;
 
-    return (data.results || []).map(p => ({
-      name: p.name,
-      party: p.party || 'Not listed',
-      currentRole: p.current_role ? {
-        title: p.current_role.title,
-        district: p.current_role.district,
-        chamber: p.current_role.org_classification,
-      } : null,
-      email: p.email || null,
-      image: p.image || null,
-      links: (p.links || []).map(l => l.url),
-      sources: (p.sources || []).map(s => s.url),
+    // For each legislator found, also fetch their recent sponsored bills
+    const legislators = await Promise.all(data.results.map(async (p) => {
+      let bills = [];
+      try {
+        const billParams = new URLSearchParams({
+          jurisdiction: 'ocd-jurisdiction/country:us/state:ga/government',
+          sponsor_id: p.id,
+          per_page: 5,
+          sort: 'updated_desc',
+        });
+        const billRes = await fetch(`https://v3.openstates.org/bills?${billParams}`, {
+          headers: { 'X-API-KEY': key, 'Accept': 'application/json' }
+        });
+        if (billRes.ok) {
+          const billData = await billRes.json();
+          bills = (billData.results || []).map(b => ({
+            identifier: b.identifier,
+            title: b.title,
+            session: b.session,
+            subjects: b.subject?.slice(0, 3) || [],
+          }));
+        }
+      } catch (_) { /* non-fatal */ }
+
+      return {
+        name: p.name,
+        party: p.party || 'Not listed',
+        currentRole: p.current_role ? {
+          title: p.current_role.title,
+          district: p.current_role.district,
+          chamber: p.current_role.org_classification,
+        } : null,
+        email: p.email || null,
+        links: (p.links || []).map(l => l.url),
+        sources: (p.sources || []).map(s => s.url),
+        recentBills: bills,
+      };
     }));
+
+    return legislators;
   } catch (err) {
     console.error('OpenStates API error:', err.message);
     return null;
@@ -699,10 +751,27 @@ function detectQueryType(query) {
 }
 
 // ─── FORMAT LIVE DATA INTO CLAUDE CONTEXT ─────────────────────────────────────
-function buildLiveContext(legislators, voterInfo, representatives) {
+function buildLiveContext(legislators, voterInfo, representatives, supabaseCandidates) {
   let ctx = '';
 
-  // 1st priority: OpenStates legislators
+  // 1st priority: Supabase curated candidates (verified party data)
+  if (supabaseCandidates?.length) {
+    ctx += `\n\n=== LIVE DATA: GEORGIA SOS QUALIFIED CANDIDATES (VERIFIED) ===`;
+    ctx += `\nSource: Georgia Secretary of State · Party data curated | Updated: ${new Date().toLocaleDateString()}`;
+    ctx += `\nCandidates matching query:\n`;
+    for (const c of supabaseCandidates) {
+      ctx += `\n• ${c.candidate_name}`;
+      ctx += `\n  Party: ${c.political_party || 'Not listed'}`;
+      ctx += `\n  Race: ${c.contest_name}`;
+      if (c.county) ctx += `\n  County: ${c.county}`;
+      if (c.incumbent) ctx += `\n  Status: Incumbent`;
+      if (c.occupation) ctx += `\n  Occupation: ${c.occupation}`;
+      if (c.website) ctx += `\n  Website: ${c.website}`;
+      if (c.email_address) ctx += `\n  Email: ${c.email_address}`;
+    }
+  }
+
+  // 2nd priority: OpenStates legislators + their sponsored bills
   if (legislators?.length) {
     ctx += `\n\n=== LIVE DATA: OPENSTATES / PLURAL API ===`;
     ctx += `\nSource: Official state legislative records | Updated: ${new Date().toLocaleDateString()}`;
@@ -717,6 +786,13 @@ function buildLiveContext(legislators, voterInfo, representatives) {
       }
       if (leg.email) ctx += `\n  Email: ${leg.email}`;
       if (leg.links?.[0]) ctx += `\n  Website: ${leg.links[0]}`;
+      if (leg.recentBills?.length) {
+        ctx += `\n  Recent Sponsored Bills:`;
+        for (const b of leg.recentBills) {
+          ctx += `\n    - ${b.identifier}: ${b.title}`;
+          if (b.subjects?.length) ctx += ` [${b.subjects.join(', ')}]`;
+        }
+      }
     }
   }
 
@@ -877,6 +953,7 @@ export default async function handler(req, res) {
   let legislators = null;
   let voterInfo = null;
   let representatives = null;
+  let supabaseCandidates = null;
 
   try {
     if (queryType === 'address') {
@@ -887,10 +964,15 @@ export default async function handler(req, res) {
         fetchOpenStatesLegislators(),
       ]);
     } else if (queryType === 'candidate') {
-      // Extract potential name from query for targeted search
-      const nameMatch = clean.match(/^(?:who is |about |info on |find )?([\w\s]{4,40})(?:\s+party|\s+district|\s+policy|\s+position)?$/i);
-      const nameHint = nameMatch ? nameMatch[1].trim() : null;
-      legislators = await fetchOpenStatesLegislators(nameHint);
+      // Extract name hint — broader match than before
+      const nameMatch = clean.match(/^(?:who is |about |info on |find |search )?([\w\s\-\.]{2,60})(?:\s+party|\s+district|\s+policy|\s+position|\s+candidate)?$/i);
+      const nameHint = nameMatch ? nameMatch[1].trim() : clean.slice(0, 60);
+
+      // 1. OpenStates (bills/voting records) + Supabase (verified party) in parallel
+      [legislators, supabaseCandidates] = await Promise.all([
+        fetchOpenStatesLegislators(nameHint),
+        fetchSupabaseCandidates(nameHint),
+      ]);
     } else {
       // Election info: pull voter info without electionId for auto-match
       voterInfo = await fetchVoterInfo('100 Peachtree St NW Atlanta');
@@ -899,8 +981,9 @@ export default async function handler(req, res) {
     console.error('Live data fetch error (non-fatal):', err.message);
   }
 
-  const liveContext = buildLiveContext(legislators, voterInfo, representatives);
+  const liveContext = buildLiveContext(legislators, voterInfo, representatives, supabaseCandidates);
   const dataSources = [
+    supabaseCandidates?.length && 'Georgia SOS Candidates (verified)',
     legislators?.length && 'OpenStates / Plural API (GA legislators)',
     representatives?.length && 'Google Civic API (your representatives)',
     voterInfo && 'Google Civic API (voter info)',

@@ -66,7 +66,7 @@ const SHARE_URL = "https://gaelectionguide.org";
 const SHARE_TEXT = "Know who's on your Georgia ballot — party labels may be removed, but your right to know isn't. Free nonpartisan voter guide:";
 
 function shareToTwitter() {
-  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(SHARE_TEXT)}&url=${encodeURIComponent(SHARE_URL)}`, '_blank', 'width=550,height=420');
+  window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(SHARE_TEXT)}&url=${encodeURIComponent(SHARE_URL)}`, '_blank', 'width=550,height=420');
 }
 function shareToFacebook() {
   window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(SHARE_URL)}`, '_blank', 'width=580,height=400');
@@ -546,8 +546,8 @@ export default function App() {
             </div>
             <div style={s.shareBar}>
               <span style={s.shareBarLabel}>Share this tool:</span>
-              <button style={s.shareBtn} onClick={shareToTwitter} aria-label="Share on X/Twitter">𝕏 Twitter</button>
-              <button style={s.shareBtn} onClick={shareToFacebook} aria-label="Share on Facebook">f Facebook</button>
+              <button style={s.shareBtn} onClick={shareToTwitter} aria-label="Share on X">𝕏 X</button>
+              <button style={s.shareBtn} onClick={shareToFacebook} aria-label="Share on Facebook">Facebook</button>
               {"share" in navigator && (
                 <button style={{...s.shareBtn, ...s.shareBtnNative}} onClick={shareNative} aria-label="Share">↑ Share</button>
               )}
