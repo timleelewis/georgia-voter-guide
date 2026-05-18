@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
   const key = process.env.GOOGLE_CIVIC_API_KEY;
   if (!key) {
-    return res.status(500).json({ error: 'Google Civic API key not configured.' });
+    return res.status(500).json({ error: 'Google Civic API key not configured.', debug: { hasKey: false } });
   }
 
   const fullAddress = address.includes('Georgia') || address.includes(', GA')
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
 
     if (!civicRes.ok) {
       const msg = civicData.error?.message || 'Google Civic API error';
-      return res.status(502).json({ error: msg });
+      return res.status(502).json({ error: msg, civicStatus: civicRes.status, civicError: civicData.error });
     }
 
     if (civicData.error) {
@@ -112,6 +112,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('District lookup error:', err.message);
-    return res.status(500).json({ error: `District lookup failed: ${err.message}` });
+    return res.status(500).json({ error: `District lookup failed: ${err.message}`, stack: err.stack?.split('\n')[0] });
   }
 }
