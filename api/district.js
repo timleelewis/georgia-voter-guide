@@ -25,12 +25,9 @@ export default async function handler(req, res) {
     : `${address}, Georgia`;
 
   try {
-    // Fetch all levels in one call — Google Civic returns everything for the address
-    const params = new URLSearchParams({
-      key,
-      address: fullAddress,
-      includeOffices: 'true',
-    });
+    // Google Civic representativeInfoByAddress — GET request
+    // Docs: https://developers.google.com/civic-information/docs/v2/representatives/representativeInfoByAddress
+    const params = new URLSearchParams({ key, address: fullAddress });
 
     const civicRes = await fetch(
       `https://www.googleapis.com/civicinfo/v2/representatives?${params}`
@@ -39,6 +36,16 @@ export default async function handler(req, res) {
 
     if (!civicRes.ok) {
       const msg = civicData.error?.message || 'Google Civic API error';
+      // 404 "Method not found" = Civic Information API not enabled in Google Cloud Console
+      // Fix: console.cloud.google.com → APIs & Services → Enable "Google Civic Information API"
+      if (civicRes.status === 404) {
+        return res.status(502).json({
+          error: 'Representative lookup is unavailable. The Google Civic Information API may not be enabled for this key.',
+          civicStatus: civicRes.status,
+          civicError: civicData.error,
+          fix: 'Enable the Civic Information API at console.cloud.google.com → APIs & Services → Library',
+        });
+      }
       return res.status(502).json({ error: msg, civicStatus: civicRes.status, civicError: civicData.error });
     }
 

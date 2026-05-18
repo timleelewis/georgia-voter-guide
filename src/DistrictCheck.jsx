@@ -62,8 +62,7 @@ export default function DistrictCheck({ onClose }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Lookup failed");
-      setResult(data);
-      setStep(2);
+      setResult(data);      setStep(2);
     } catch (err) {
       setError(err.message || "Could not look up district. Please try again.");
     } finally {
