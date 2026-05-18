@@ -115,7 +115,7 @@ to keep it running.
 ## How to Share It
 
 **Send this link:**
-https://georgia-voter-guide.vercel.app
+https://gaelectionguide.org
 
 **Or share this message:**
 

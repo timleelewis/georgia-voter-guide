@@ -92,7 +92,7 @@
    | `ALLOWED_ORIGIN` | your Vercel URL (add after first deploy) |
 
 6. Click **Deploy** — Vercel builds and deploys automatically
-7. You'll get a live URL like `georgia-voter-guide.vercel.app`
+7. Your live URL is `gaelectionguide.org`
 8. Go back to Environment Variables, set `ALLOWED_ORIGIN` to that URL, redeploy
 
 ---
@@ -110,8 +110,8 @@ automatic deployment. Every time you push changes to GitHub:
 ## STEP 6 — Connect Supabase Auth Redirect
 
 1. In Supabase → **Authentication → URL Configuration**
-2. Set **Site URL** to your Vercel URL (e.g., `https://georgia-voter-guide.vercel.app`)
-3. Add to **Redirect URLs**: `https://georgia-voter-guide.vercel.app/**`
+2. Set **Site URL** to `https://gaelectionguide.org`
+3. Add to **Redirect URLs**: `https://gaelectionguide.org/**`
 4. Save
 
 ---
