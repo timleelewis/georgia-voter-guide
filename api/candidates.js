@@ -1,6 +1,6 @@
 // api/candidates.js — Vercel Serverless Function
 // Queries qualified_candidates table in Supabase
-// Supports: search by name/contest/county, filter by party/county, browse all
+// All filters (search, party, county) always work together
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
@@ -17,76 +17,63 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Supabase not configured' });
   }
 
-  const { search, county, party, contest, limit = 100, offset = 0 } = req.body || {};
+  const { search, county, party, limit = 100, offset = 0 } = req.body || {};
 
   try {
-    let url, body;
+    // Always query the table directly so search + filters always work together
+    const params = new URLSearchParams({
+      select: 'id,contest_name,county,municipality,candidate_name,candidate_status,political_party,qualified_date,incumbent,occupation,email_address,website',
+      order: 'county.asc,contest_name.asc,candidate_name.asc',
+      limit: String(Math.min(limit, 200)),
+      offset: String(offset),
+    });
 
-    if (search && search.trim().length >= 2) {
-      // Use the full-text search function for name/contest/county searches
-      url = `${supabaseUrl}/rest/v1/rpc/search_candidates`;
-      body = { search_term: search.trim() };
-    } else {
-      // Browse/filter mode — query the table directly with filters
-      const params = new URLSearchParams({
-        select: 'id,contest_name,county,municipality,candidate_name,candidate_status,political_party,qualified_date,incumbent,occupation,email_address,website',
-        candidate_status: 'eq.Qualified',
-        order: 'county.asc,contest_name.asc,candidate_name.asc',
-        limit: String(Math.min(limit, 200)),
-        offset: String(offset),
-      });
+    // Always filter to qualified candidates only
+    params.append('candidate_status', 'ilike.*Qualified*');
 
-      if (county && county !== 'All') params.set('county', `ilike.*${county}*`);
-      if (party && party !== 'All') params.set('political_party', `ilike.*${party}*`);
-      if (contest && contest !== 'All') params.set('contest_name', `ilike.*${contest}*`);
-
-      url = `${supabaseUrl}/rest/v1/qualified_candidates?${params}`;
-      body = null;
+    // Party filter
+    if (party && party !== 'All') {
+      params.append('political_party', `ilike.*${party}*`);
     }
 
-    const fetchOpts = {
-      method: body ? 'POST' : 'GET',
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation',
-      },
+    // County filter
+    if (county && county !== 'All') {
+      params.append('county', `ilike.*${county}*`);
+    }
+
+    // Text search across name, contest, county, municipality using Supabase `or`
+    if (search && search.trim().length >= 2) {
+      const q = search.trim().replace(/[%_]/g, '\\$&'); // escape wildcards
+      params.append('or', `(candidate_name.ilike.*${q}*,contest_name.ilike.*${q}*,county.ilike.*${q}*,municipality.ilike.*${q}*)`);
+    }
+
+    const headers = {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
     };
-    if (body) fetchOpts.body = JSON.stringify(body);
 
-    const sbRes = await fetch(url, fetchOpts);
-    const data = await sbRes.json();
+    // Run data fetch and count fetch in parallel
+    const [dataRes, countRes] = await Promise.all([
+      fetch(`${supabaseUrl}/rest/v1/qualified_candidates?${params}`, { headers }),
+      fetch(`${supabaseUrl}/rest/v1/qualified_candidates?${params}&select=id`, {
+        headers: { ...headers, 'Prefer': 'count=exact' },
+      }),
+    ]);
 
-    if (!sbRes.ok) {
+    const data = await dataRes.json();
+
+    if (!dataRes.ok) {
       return res.status(502).json({ error: data.message || 'Supabase query failed', detail: data });
     }
 
-    // Get total count for pagination (browse mode only)
-    let total = null;
-    if (!search) {
-      const countParams = new URLSearchParams({
-        select: 'id',
-        candidate_status: 'eq.Qualified',
-      });
-      if (county && county !== 'All') countParams.set('county', `ilike.*${county}*`);
-      if (party && party !== 'All') countParams.set('political_party', `ilike.*${party}*`);
+    const countRange = countRes.headers.get('content-range');
+    const total = countRange ? parseInt(countRange.split('/')[1]) || null : null;
 
-      const countRes = await fetch(
-        `${supabaseUrl}/rest/v1/qualified_candidates?${countParams}`,
-        {
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Prefer': 'count=exact',
-          },
-        }
-      );
-      const countRange = countRes.headers.get('content-range');
-      if (countRange) total = parseInt(countRange.split('/')[1]) || null;
-    }
-
-    return res.status(200).json({ candidates: Array.isArray(data) ? data : [], total });
+    return res.status(200).json({
+      candidates: Array.isArray(data) ? data : [],
+      total,
+    });
 
   } catch (err) {
     console.error('Candidates API error:', err.message);
